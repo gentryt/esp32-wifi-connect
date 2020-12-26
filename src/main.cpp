@@ -4,15 +4,20 @@
 #include <NTPClient.h>
 #include <SimpleDHT.h>
 #include <ArduinoJson.h>
+#include <EEPROM.h>
 
-#define pinDHT11 2
+#define pinDHT11 4
 #define SensorPin 34
+#define CalibrationLED 2
 
 #define network "2.4GHz_Modem"
 #define pw "L30N@rd01"
 #define timeout 20000
 #define REPORT_STATUS "garden/1/status"
 #define CalibrateMoistureSensor "garden/1/calibrateMoistureSensor"
+
+EEPROMClass  AirValue("eeprom0", 0x500);
+EEPROMClass  WaterValue("eeprom1", 0x500);
 
 String deviceName = "AutoWater_1";
 const char* mqttServer = "192.168.1.75";
@@ -22,11 +27,33 @@ PubSubClient client(espClient);
 NTPClient timeClient(ntpUDP,21600);
 
 SimpleDHT11 dht11(pinDHT11);
-int AirValue = 2640;
-int WaterValue = 1650;
+int airValue;
+int waterValue;
+int intervals;
 bool CalibratingMoistureSensor = false;
 
-void calibrateMoistureSensorValue1(char* value){
+void setupEeprom(){
+  Serial.println("Testing EEPROMClass");
+  if (!AirValue.begin(AirValue.length())) {
+    Serial.println("Failed to initialise AirValue");
+    Serial.println("Restarting...");
+    delay(1000);
+    ESP.restart();
+  }
+  if (!WaterValue.begin(WaterValue.length())) {
+    Serial.println("Failed to initialise WaterValue");
+    Serial.println("Restarting...");
+    delay(1000);
+    ESP.restart();
+  }
+
+  AirValue.get(0, airValue);
+  WaterValue.get(0, waterValue);
+  Serial.print("Stored Air Value: "); Serial.println(airValue);
+  Serial.print("Stored Water Value: "); Serial.println(waterValue);
+}
+
+void calibrateMoistureSensorValue(char* value){
   Serial.print("Made it to the calibration method: ");
   Serial.println((char*)value);
   if (strcmp(value, "air") != 0 && strcmp(value, "water") != 0){
@@ -35,6 +62,7 @@ void calibrateMoistureSensorValue1(char* value){
     return;
   }
 
+  digitalWrite(CalibrationLED, HIGH);
   CalibratingMoistureSensor = true;
   Serial.print("Calibrating ");
   Serial.print((char*)value);
@@ -59,56 +87,19 @@ void calibrateMoistureSensorValue1(char* value){
   if (strcmp(value, "air") == 0){
     Serial.print("The calibrated air value, should be ");
     Serial.println(avg);
-    AirValue = avg;
+    airValue = avg;
+    AirValue.put(0, airValue);
+     AirValue.commit();
   } else if (strcmp(value, "water") == 0){
     Serial.print("The calibrated water value, should be ");
     Serial.println(avg);
-    WaterValue = avg;
-  }
-
-    CalibratingMoistureSensor = false;
-}
-
-void calibrateMoistureSensorValue(char* value)
-{
-  std::string valueString = getenv(value);
-  std::string air = getenv("air");
-  std::string water = getenv("water");
-
-  if (valueString != air && valueString != water)
-  {
-    Serial.println("Invalid sensor calibration payload " + String(value));
-    Serial.println();
-    return;
-  }
-  
-  CalibratingMoistureSensor = true;
-  Serial.println("Calibrating " + String(value) + " value");
-  int readings = 0;
-  for (int i = 0; i < 10 ; i++)
-  {
-    int reading = analogRead(SensorPin);
-    readings += reading;
-    Serial.print("Reading #" + i);
-    Serial.println(reading);
-
-    delay(2500);
-  }
-  
-  int avg = readings/10;
-  Serial.print("Calibrated ");
-  Serial.print(String(value));
-  Serial.print(" value = ");
-  Serial.println(avg);
-  
-  if (valueString == air)
-  {
-      AirValue = avg;
-  } else if(valueString == water){
-      WaterValue = avg;
+    waterValue = avg;
+    WaterValue.put(0, waterValue);
+     WaterValue.commit();
   } 
-
-  CalibratingMoistureSensor = false; 
+ 
+  CalibratingMoistureSensor = false;
+  digitalWrite(CalibrationLED, LOW);
 }
 
 void receivedCallBack(char* topic, byte* payload, unsigned int length){
@@ -118,7 +109,7 @@ void receivedCallBack(char* topic, byte* payload, unsigned int length){
   if (strcmp(topic, CalibrateMoistureSensor) == 0)
   {
     payload[length] = '\0';
-    calibrateMoistureSensorValue1((char*)payload);
+    calibrateMoistureSensorValue((char*)payload);
   }
 }
 
@@ -133,7 +124,7 @@ void  connectWifi(){
 
   while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < timeout){
     Serial.print(".");
-    delay(100);
+    delay(1000);
   }
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -147,6 +138,7 @@ void  connectWifi(){
     Serial.println("Device Name: " + deviceName);
   }  
   Serial.println();
+  delay(500);
 }
 
 void connectMqtt(){
@@ -170,7 +162,7 @@ void connectMqtt(){
 
 void reportStatus(){
   Serial.println("==========================================");
-  Serial.println("Sample DHT11...");
+  Serial.println("Sample DHT11 and Moisture readings...");
 
   byte temperature = 0;
   byte humidity = 0;
@@ -186,7 +178,7 @@ void reportStatus(){
   int soilMoisture = 0;
   int soilMoisturePercent = 0;
   soilMoisture = analogRead(SensorPin);
-  soilMoisturePercent = map(soilMoisture, AirValue, WaterValue, 0,100);
+  soilMoisturePercent = map(soilMoisture, airValue, waterValue, 0,100);
   int p = 0;
   if (soilMoisturePercent > 100){
     p = 100;
@@ -202,8 +194,8 @@ void reportStatus(){
   doc["hum"] = String(humidity);
   doc["moisture"] = String(soilMoisture);
   doc["moisturePercent"] = String(p);
-  doc["waterValue"] = String(WaterValue);
-  doc["airValue"] = String(AirValue);
+  doc["waterValue"] = String(waterValue);
+  doc["airValue"] = String(airValue);
 
   char buffer[256];  
   serializeJson(doc, buffer);
@@ -213,12 +205,8 @@ void reportStatus(){
   delay(2500);
 }
 
-void loadAppSettings(){
- // AirValue = settings.getString("AirValue", "0").toInt();
-  //WaterValue = settings.getString("WaterValue", "100").toInt();
-}
-
 void setup() {
+  pinMode(CalibrationLED, OUTPUT);
   pinMode(pinDHT11, INPUT);
   pinMode(SensorPin, INPUT);
   Serial.begin(115200);
@@ -226,6 +214,7 @@ void setup() {
   client.setServer(mqttServer, 1883);
   client.setCallback(receivedCallBack);
   timeClient.begin();
+  setupEeprom();
 }
 
 void loop() {
@@ -235,8 +224,7 @@ void loop() {
   }
   client.loop();
 
-  if (!CalibratingMoistureSensor)
-  {
+  if (!CalibratingMoistureSensor) {
     reportStatus();
   }
 
