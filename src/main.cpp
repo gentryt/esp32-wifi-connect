@@ -16,15 +16,15 @@
 #define REPORT_STATUS "garden/1/status"
 #define CalibrateMoistureSensor "garden/1/calibrateMoistureSensor"
 
-EEPROMClass  AirValue("eeprom0", 0x500);
-EEPROMClass  WaterValue("eeprom1", 0x500);
+EEPROMClass  AirValue("eeprom0", 0x200);
+EEPROMClass  WaterValue("eeprom1", 0x200);
 
 String deviceName = "AutoWater_1";
 const char* mqttServer = "192.168.1.75";
 WiFiClient espClient;
 WiFiUDP ntpUDP;
 PubSubClient client(espClient);
-NTPClient timeClient(ntpUDP,21600);
+NTPClient timeClient(ntpUDP,-21600);
 
 SimpleDHT11 dht11(pinDHT11);
 int airValue;
