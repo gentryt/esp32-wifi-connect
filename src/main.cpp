@@ -6,8 +6,8 @@
 #include <ArduinoJson.h>
 #include <EEPROM.h>
 
-#define pinDHT11 4
-#define SensorPin 34
+#define pinDHT11 4 //Center DHT-11 to D4
+#define SensorPin 34 //Moisture Censor Yellow to D34
 #define CalibrationLED 2
 
 #define network "2.4GHz_Modem"
