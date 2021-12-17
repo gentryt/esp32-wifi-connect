@@ -227,5 +227,4 @@ void loop() {
   if (!CalibratingMoistureSensor) {
     reportStatus();
   }
-
 }
