@@ -19,7 +19,7 @@
 EEPROMClass  AirValue("eeprom0", 0x200);
 EEPROMClass  WaterValue("eeprom1", 0x200);
 
-String deviceName = "AutoWater_1";
+String deviceName = "AutoWater_1`";
 const char* mqttServer = "192.168.1.75";
 WiFiClient espClient;
 WiFiUDP ntpUDP;
@@ -95,7 +95,7 @@ void calibrateMoistureSensorValue(char* value){
     Serial.println(avg);
     waterValue = avg;
     WaterValue.put(0, waterValue);
-     WaterValue.commit();
+    WaterValue.commit();
   } 
  
   CalibratingMoistureSensor = false;
@@ -189,6 +189,7 @@ void reportStatus(){
   }
 
   DynamicJsonDocument doc(256);
+  doc["name"] = deviceName;
   doc["time"] = String(timeClient.getFormattedTime());
   doc["temp"] = String(temperature);
   doc["hum"] = String(humidity);
